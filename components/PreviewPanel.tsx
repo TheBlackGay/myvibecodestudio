@@ -1,17 +1,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, Code, Smartphone, Monitor, Tablet, RefreshCw, ExternalLink, Sparkles, Download, FileCode, FolderOpen, File, Menu, ChevronRight, ChevronDown, Save, Edit3 } from 'lucide-react';
+import { Eye, Code, Smartphone, Monitor, Tablet, RefreshCw, ExternalLink, Sparkles, Download, FileCode, FolderOpen, File, Menu, ChevronRight, ChevronDown, Save, Edit3, Plus, Trash2, X } from 'lucide-react';
 import { GeneratedCode, FileData } from '../types';
 import { bundleProject } from '../utils/bundler';
 import JSZip from 'jszip';
 import Editor from '@monaco-editor/react';
+import ConsolePanel, { ConsoleMessage } from './ConsolePanel';
 
 interface PreviewPanelProps {
   code: GeneratedCode | null;
   onCodeChange: (filePath: string, content: string) => void;
+  onFileCreate?: (path: string, content: string, language: string) => void;
+  onFileDelete?: (path: string) => void;
 }
 
-const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
+const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange, onFileCreate, onFileDelete }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
   const [key, setKey] = useState(0); // Used to force iframe refresh
   const [viewport, setViewport] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
@@ -26,6 +29,15 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
   const editorRef = useRef<any>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [editingContent, setEditingContent] = useState<string>('');
+  
+  // Console State
+  const [consoleMessages, setConsoleMessages] = useState<ConsoleMessage[]>([]);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  
+  // File management state
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileFolder, setNewFileFolder] = useState('src');
 
   useEffect(() => {
     if (code) {
@@ -41,6 +53,25 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
       }
     }
   }, [code]);
+
+  // Setup console message listener
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from our iframe
+      if (event.data && event.data.type === 'console') {
+        const newMessage: ConsoleMessage = {
+          id: Date.now().toString() + Math.random(),
+          type: event.data.level || 'log',
+          message: event.data.message,
+          timestamp: Date.now(),
+        };
+        setConsoleMessages(prev => [...prev, newMessage]);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   // Update editing content when selected file changes
   useEffect(() => {
@@ -107,6 +138,46 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
 
   const handleRefresh = () => {
     setKey((prev) => prev + 1);
+    setConsoleMessages([]); // Clear console on refresh
+  };
+
+  const handleClearConsole = () => {
+    setConsoleMessages([]);
+  };
+
+  const handleCreateFile = () => {
+    if (!newFileName.trim() || !onFileCreate) return;
+    
+    const extension = newFileName.split('.').pop() || '';
+    let language = 'plaintext';
+    if (extension === 'html') language = 'html';
+    else if (extension === 'css') language = 'css';
+    else if (extension === 'js' || extension === 'jsx') language = 'javascript';
+    else if (extension === 'ts' || extension === 'tsx') language = 'typescript';
+    else if (extension === 'md') language = 'markdown';
+    
+    const filePath = `${newFileFolder}/${newFileName}`;
+    onFileCreate(filePath, '', language);
+    
+    setNewFileName('');
+    setIsCreatingFile(false);
+    setSelectedFile(filePath);
+  };
+
+  const handleDeleteFile = (path: string) => {
+    if (!onFileDelete) return;
+    
+    const confirmed = window.confirm(`Are you sure you want to delete ${path}?`);
+    if (confirmed) {
+      onFileDelete(path);
+      // Select another file if we deleted the current one
+      if (selectedFile === path && code) {
+        const otherFiles = Object.keys(code).filter(p => p !== path);
+        if (otherFiles.length > 0) {
+          setSelectedFile(otherFiles[0]);
+        }
+      }
+    }
   };
 
   const handleOpenInNewTab = () => {
@@ -261,27 +332,78 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden flex relative">
+      <div className="flex-1 overflow-hidden flex relative flex-col">
         {activeTab === 'preview' ? (
-          <div className={`w-full flex justify-center bg-[#09090b] ${viewport !== 'desktop' ? 'items-start overflow-y-auto pt-8' : ''}`}>
-             <div className={`transition-all duration-300 ease-in-out bg-white ${getViewportClass()} ${viewport === 'desktop' ? 'h-full' : 'shrink-0'}`}>
+          <>
+            <div className={`flex-1 flex justify-center bg-[#09090b] overflow-hidden ${viewport !== 'desktop' ? 'items-start overflow-y-auto pt-8' : ''}`}>
+              <div className={`transition-all duration-300 ease-in-out bg-white ${getViewportClass()} ${viewport === 'desktop' ? 'h-full' : 'shrink-0'}`}>
                 <iframe
+                  ref={iframeRef}
                   key={key}
                   title="Preview"
                   srcDoc={bundledHtml}
                   className="w-full h-full border-none"
                   sandbox="allow-scripts allow-same-origin allow-modals"
                 />
-             </div>
-          </div>
+              </div>
+            </div>
+            <ConsolePanel messages={consoleMessages} onClear={handleClearConsole} />
+          </>
         ) : (
           <div className="w-full h-full flex bg-[#1e1e1e]">
              {/* VSCode Sidebar */}
              <div className="w-64 bg-[#18181b] border-r border-[#27272a] flex flex-col">
-                <div className="h-9 px-4 flex items-center text-[11px] font-bold text-zinc-500 tracking-wider">
-                   EXPLORER
+                <div className="h-9 px-4 flex items-center justify-between text-[11px] font-bold text-zinc-500 tracking-wider">
+                   <span>EXPLORER</span>
+                   <button
+                     onClick={() => setIsCreatingFile(true)}
+                     className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors"
+                     title="New File"
+                   >
+                     <Plus className="w-3.5 h-3.5" />
+                   </button>
                 </div>
                 
+                {/* New File Modal */}
+                {isCreatingFile && (
+                  <div className="mx-2 my-2 p-3 bg-zinc-800 rounded-lg border border-zinc-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-zinc-300">New File</span>
+                      <button
+                        onClick={() => setIsCreatingFile(false)}
+                        className="p-0.5 rounded hover:bg-zinc-700 text-zinc-400"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <select
+                      value={newFileFolder}
+                      onChange={(e) => setNewFileFolder(e.target.value)}
+                      className="w-full mb-2 px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-300 focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="src">src/</option>
+                      <option value="public">public/</option>
+                      <option value="">root</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={newFileName}
+                      onChange={(e) => setNewFileName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCreateFile()}
+                      placeholder="filename.jsx"
+                      className="w-full mb-2 px-2 py-1 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-300 focus:outline-none focus:border-indigo-500"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleCreateFile}
+                      disabled={!newFileName.trim()}
+                      className="w-full px-2 py-1 text-xs bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded transition-colors"
+                    >
+                      Create File
+                    </button>
+                  </div>
+                )}
+
                 {/* Project Name */}
                 <div className="px-2 py-1">
                    <div className="flex items-center gap-1 px-2 py-1 text-zinc-300 text-xs font-bold hover:bg-[#2a2d2e] cursor-pointer" onClick={() => {}}>
@@ -308,11 +430,22 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
                             {expandedFolders.has(folder) && fileTree[folder].map(path => (
                                 <div 
                                     key={path}
-                                    className={`flex items-center gap-2 pl-8 pr-2 py-1 text-xs cursor-pointer border-l-2 ${selectedFile === path ? 'bg-[#37373d] text-white border-indigo-500' : 'text-zinc-400 hover:bg-[#2a2d2e] hover:text-zinc-100 border-transparent'}`}
-                                    onClick={() => setSelectedFile(path)}
+                                    className={`group flex items-center justify-between gap-2 pl-8 pr-2 py-1 text-xs cursor-pointer border-l-2 ${selectedFile === path ? 'bg-[#37373d] text-white border-indigo-500' : 'text-zinc-400 hover:bg-[#2a2d2e] hover:text-zinc-100 border-transparent'}`}
                                 >
-                                    <FileCode className={`w-3.5 h-3.5 ${path.endsWith('css') ? 'text-blue-400' : path.endsWith('jsx') ? 'text-yellow-400' : 'text-orange-400'}`} />
-                                    {path.split('/')[1]}
+                                    <div className="flex items-center gap-2 flex-1 min-w-0" onClick={() => setSelectedFile(path)}>
+                                        <FileCode className={`w-3.5 h-3.5 shrink-0 ${path.endsWith('css') ? 'text-blue-400' : path.endsWith('jsx') ? 'text-yellow-400' : 'text-orange-400'}`} />
+                                        <span className="truncate">{path.split('/')[1]}</span>
+                                    </div>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteFile(path);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-all"
+                                        title="Delete file"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                    </button>
                                 </div>
                             ))}
                         </div>
@@ -322,11 +455,22 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
                       {fileTree['root']?.map(path => (
                          <div 
                             key={path}
-                            className={`flex items-center gap-2 pl-4 pr-2 py-1 text-xs cursor-pointer border-l-2 ${selectedFile === path ? 'bg-[#37373d] text-white border-indigo-500' : 'text-zinc-400 hover:bg-[#2a2d2e] hover:text-zinc-100 border-transparent'}`}
-                            onClick={() => setSelectedFile(path)}
+                            className={`group flex items-center justify-between gap-2 pl-4 pr-2 py-1 text-xs cursor-pointer border-l-2 ${selectedFile === path ? 'bg-[#37373d] text-white border-indigo-500' : 'text-zinc-400 hover:bg-[#2a2d2e] hover:text-zinc-100 border-transparent'}`}
                         >
-                            <File className="w-3.5 h-3.5 text-zinc-500" />
-                            {path}
+                            <div className="flex items-center gap-2 flex-1 min-w-0" onClick={() => setSelectedFile(path)}>
+                                <File className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                <span className="truncate">{path}</span>
+                            </div>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteFile(path);
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-all"
+                                title="Delete file"
+                            >
+                                <Trash2 className="w-3 h-3" />
+                            </button>
                         </div>
                       ))}
                    </div>

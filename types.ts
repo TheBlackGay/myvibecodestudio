@@ -24,6 +24,13 @@ export interface CodeChangeEvent {
   content: string;
 }
 
+export interface FileOperation {
+  type: 'create' | 'delete' | 'rename';
+  path: string;
+  newPath?: string;
+  content?: string;
+}
+
 export type AIProvider = 'gemini' | 'openai';
 
 export interface AISettings {

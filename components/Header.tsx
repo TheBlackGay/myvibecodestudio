@@ -1,13 +1,14 @@
 
 import React from 'react';
-import { Sparkles, Terminal, Code2, Zap, Settings } from 'lucide-react';
+import { Sparkles, Terminal, Code2, Zap, Settings, Layers } from 'lucide-react';
 
 interface HeaderProps {
   onReset: () => void;
   onOpenSettings: () => void;
+  onOpenTemplates: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings }) => {
+const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings, onOpenTemplates }) => {
   return (
     <header className="h-16 border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
       <div className="flex items-center gap-2">
@@ -35,6 +36,14 @@ const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings }) => {
         </div>
         <div className="h-4 w-px bg-zinc-800 mx-2"></div>
         
+        <button
+          onClick={onOpenTemplates}
+          className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"
+          title="Templates"
+        >
+          <Layers className="w-5 h-5" />
+        </button>
+
         <button
           onClick={onOpenSettings}
           className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"

@@ -4,16 +4,19 @@ import Header from './components/Header';
 import ChatInterface from './components/ChatInterface';
 import PreviewPanel from './components/PreviewPanel';
 import SettingsModal from './components/SettingsModal';
+import TemplateSelector from './components/TemplateSelector';
 import { sendMessage } from './services/ai';
 import { extractCodeBlock } from './utils/codeParser';
 import { Message, Role, GeneratedCode, AISettings } from './types';
 import { DEFAULT_SETTINGS } from './constants';
+import { ProjectTemplate } from './templates';
 
 function App() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<GeneratedCode | null>(null);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   
   // Handle code changes from Monaco Editor
   const handleCodeChange = (filePath: string, content: string) => {
@@ -29,6 +32,35 @@ function App() {
         }
       };
     });
+  };
+
+  // Handle file creation
+  const handleFileCreate = (path: string, content: string, language: string) => {
+    setGeneratedCode(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [path]: {
+          language,
+          content
+        }
+      };
+    });
+  };
+
+  // Handle file deletion
+  const handleFileDelete = (path: string) => {
+    setGeneratedCode(prev => {
+      if (!prev) return prev;
+      const newCode = { ...prev };
+      delete newCode[path];
+      return newCode;
+    });
+  };
+
+  // Handle template selection
+  const handleTemplateSelect = (template: ProjectTemplate) => {
+    setGeneratedCode(template.files);
   };
   
   // Settings State
@@ -186,6 +218,7 @@ function App() {
       <Header 
         onReset={handleReset} 
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenTemplates={() => setIsTemplatesOpen(true)}
       />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
@@ -197,7 +230,12 @@ function App() {
           onStop={handleStop}
           isLoading={isLoading}
         />
-        <PreviewPanel code={generatedCode} onCodeChange={handleCodeChange} />
+        <PreviewPanel 
+          code={generatedCode} 
+          onCodeChange={handleCodeChange}
+          onFileCreate={handleFileCreate}
+          onFileDelete={handleFileDelete}
+        />
       </main>
 
       <SettingsModal 
@@ -205,6 +243,12 @@ function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSave={handleSettingsSave}
+      />
+
+      <TemplateSelector
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        onSelect={handleTemplateSelect}
       />
     </div>
   );
