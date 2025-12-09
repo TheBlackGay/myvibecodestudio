@@ -1,6 +1,6 @@
 // Project storage service for persistent file management
 
-import { GeneratedCode, Message } from '../types';
+import { GeneratedCode, Message, AISettings } from '../types';
 
 export interface StoredProject {
   id: string;
@@ -8,17 +8,24 @@ export interface StoredProject {
   description: string;
   files: GeneratedCode;
   chatHistory?: Message[];  // Store chat conversation
+  settings?: AISettings;    // Project-specific AI settings
   createdAt: number;
   updatedAt: number;
   tags?: string[];
 }
+
+// Storage structure:
+// vibecode_project_{projectId}          - Project metadata
+// vibecode_project_{projectId}_files    - Project files
+// vibecode_project_{projectId}_chat     - Chat history
+// vibecode_project_{projectId}_settings - Project settings
 
 const STORAGE_KEY_PREFIX = 'vibecode_project_';
 const PROJECTS_INDEX_KEY = 'vibecode_projects_index';
 const DATA_DIR = (import.meta as any).env?.VITE_DATA_DIR || './vibecode-projects';
 
 export class StorageService {
-  // Get all projects
+  // Get all projects (metadata only)
   static getAllProjects(): StoredProject[] {
     try {
       const indexStr = localStorage.getItem(PROJECTS_INDEX_KEY);
@@ -28,8 +35,8 @@ export class StorageService {
       const projects: StoredProject[] = [];
       
       for (const id of projectIds) {
-        const project = this.getProject(id);
-        if (project) projects.push(project);
+        const metadata = this.getProjectMetadata(id);
+        if (metadata) projects.push(metadata);
       }
       
       return projects.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -39,45 +46,130 @@ export class StorageService {
     }
   }
 
-  // Get a specific project
+  // Get project metadata only (for list view)
+  static getProjectMetadata(id: string): StoredProject | null {
+    try {
+      const metadataStr = localStorage.getItem(STORAGE_KEY_PREFIX + id);
+      if (!metadataStr) return null;
+      
+      const metadata = JSON.parse(metadataStr);
+      // Return metadata without heavy data (files, chat)
+      return {
+        id: metadata.id,
+        name: metadata.name,
+        description: metadata.description,
+        createdAt: metadata.createdAt,
+        updatedAt: metadata.updatedAt,
+        tags: metadata.tags,
+        files: {}, // Empty for metadata
+        chatHistory: [],
+        settings: undefined
+      };
+    } catch (error) {
+      console.error('Error loading project metadata:', error);
+      return null;
+    }
+  }
+
+  // Get complete project with all data
   static getProject(id: string): StoredProject | null {
     try {
-      const projectStr = localStorage.getItem(STORAGE_KEY_PREFIX + id);
-      if (!projectStr) return null;
+      // Load metadata
+      const metadataStr = localStorage.getItem(STORAGE_KEY_PREFIX + id);
+      if (!metadataStr) return null;
+      const metadata = JSON.parse(metadataStr);
       
-      return JSON.parse(projectStr);
+      // Load files (stored separately for isolation)
+      const filesStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_files');
+      const files = filesStr ? JSON.parse(filesStr) : {};
+      
+      // Load chat history (stored separately)
+      const chatStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_chat');
+      const chatHistory = chatStr ? JSON.parse(chatStr) : [];
+      
+      // Load settings (stored separately)
+      const settingsStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_settings');
+      const settings = settingsStr ? JSON.parse(settingsStr) : undefined;
+      
+      return {
+        ...metadata,
+        files,
+        chatHistory,
+        settings
+      };
     } catch (error) {
       console.error('Error loading project:', error);
       return null;
     }
   }
 
-  // Save a project
+  // Get project files only
+  static getProjectFiles(id: string): GeneratedCode | null {
+    try {
+      const filesStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_files');
+      return filesStr ? JSON.parse(filesStr) : null;
+    } catch (error) {
+      console.error('Error loading project files:', error);
+      return null;
+    }
+  }
+
+  // Get project chat history only
+  static getProjectChat(id: string): Message[] | null {
+    try {
+      const chatStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_chat');
+      return chatStr ? JSON.parse(chatStr) : null;
+    } catch (error) {
+      console.error('Error loading project chat:', error);
+      return null;
+    }
+  }
+
+  // Get project settings only
+  static getProjectSettings(id: string): AISettings | null {
+    try {
+      const settingsStr = localStorage.getItem(STORAGE_KEY_PREFIX + id + '_settings');
+      return settingsStr ? JSON.parse(settingsStr) : null;
+    } catch (error) {
+      console.error('Error loading project settings:', error);
+      return null;
+    }
+  }
+
+  // Save a project (isolated storage)
   static saveProject(project: Omit<StoredProject, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }): string {
     try {
       const id = project.id || this.generateId();
       const now = Date.now();
       
-      const existingProject = project.id ? this.getProject(project.id) : null;
+      const existingMetadata = project.id ? this.getProjectMetadata(project.id) : null;
       
-      const storedProject: StoredProject = {
+      // Store metadata separately
+      const metadata = {
         id,
         name: project.name,
         description: project.description,
-        files: project.files,
-        chatHistory: project.chatHistory,
-        createdAt: existingProject?.createdAt || now,
+        createdAt: existingMetadata?.createdAt || now,
         updatedAt: now,
         tags: project.tags
       };
+      localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(metadata));
       
-      // Save project
-      localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(storedProject));
+      // Store files separately (project isolation)
+      localStorage.setItem(STORAGE_KEY_PREFIX + id + '_files', JSON.stringify(project.files || {}));
+      
+      // Store chat history separately
+      localStorage.setItem(STORAGE_KEY_PREFIX + id + '_chat', JSON.stringify(project.chatHistory || []));
+      
+      // Store settings separately
+      if (project.settings) {
+        localStorage.setItem(STORAGE_KEY_PREFIX + id + '_settings', JSON.stringify(project.settings));
+      }
       
       // Update index
       this.addToIndex(id);
       
-      console.log(`Project "${project.name}" saved to: ${DATA_DIR}/${id}`);
+      console.log(`Project "${project.name}" saved with isolated storage: ${DATA_DIR}/${id}/`);
       
       return id;
     } catch (error) {
@@ -86,11 +178,22 @@ export class StorageService {
     }
   }
 
-  // Delete a project
+  // Delete a project (remove all isolated data)
   static deleteProject(id: string): boolean {
     try {
+      // Remove metadata
       localStorage.removeItem(STORAGE_KEY_PREFIX + id);
+      // Remove files
+      localStorage.removeItem(STORAGE_KEY_PREFIX + id + '_files');
+      // Remove chat history
+      localStorage.removeItem(STORAGE_KEY_PREFIX + id + '_chat');
+      // Remove settings
+      localStorage.removeItem(STORAGE_KEY_PREFIX + id + '_settings');
+      
+      // Update index
       this.removeFromIndex(id);
+      
+      console.log(`Project ${id} and all its data deleted from: ${DATA_DIR}/${id}/`);
       return true;
     } catch (error) {
       console.error('Error deleting project:', error);
@@ -110,21 +213,51 @@ export class StorageService {
     });
   }
   
-  // Update project (for incremental saves)
+  // Update project (for incremental saves with isolation)
   static updateProject(id: string, updates: Partial<Omit<StoredProject, 'id' | 'createdAt'>>): boolean {
     try {
-      const existing = this.getProject(id);
+      const existing = this.getProjectMetadata(id);
       if (!existing) return false;
       
-      const updated: StoredProject = {
-        ...existing,
-        ...updates,
-        id,
-        createdAt: existing.createdAt,
-        updatedAt: Date.now()
-      };
+      const now = Date.now();
       
-      localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(updated));
+      // Update metadata if needed
+      if (updates.name || updates.description || updates.tags) {
+        const metadata = {
+          id,
+          name: updates.name || existing.name,
+          description: updates.description || existing.description,
+          tags: updates.tags || existing.tags,
+          createdAt: existing.createdAt,
+          updatedAt: now
+        };
+        localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(metadata));
+      } else {
+        // Just update timestamp
+        const metadataStr = localStorage.getItem(STORAGE_KEY_PREFIX + id);
+        if (metadataStr) {
+          const metadata = JSON.parse(metadataStr);
+          metadata.updatedAt = now;
+          localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(metadata));
+        }
+      }
+      
+      // Update files if provided
+      if (updates.files) {
+        localStorage.setItem(STORAGE_KEY_PREFIX + id + '_files', JSON.stringify(updates.files));
+      }
+      
+      // Update chat history if provided
+      if (updates.chatHistory) {
+        localStorage.setItem(STORAGE_KEY_PREFIX + id + '_chat', JSON.stringify(updates.chatHistory));
+      }
+      
+      // Update settings if provided
+      if (updates.settings) {
+        localStorage.setItem(STORAGE_KEY_PREFIX + id + '_settings', JSON.stringify(updates.settings));
+      }
+      
+      console.log(`Project ${id} updated in isolated storage: ${DATA_DIR}/${id}/`);
       return true;
     } catch (error) {
       console.error('Error updating project:', error);

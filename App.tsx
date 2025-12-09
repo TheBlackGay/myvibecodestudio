@@ -28,6 +28,10 @@ function App() {
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
+  // Settings State (must be declared early for use in other functions)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
+  
   // Multi-agent state
   const [isMultiAgentMode, setIsMultiAgentMode] = useState(false);
   const [agentStates, setAgentStates] = useState<AgentState[]>([]);
@@ -87,23 +91,50 @@ function App() {
 
   // Handle project load from sidebar
   const handleSelectProject = (project: StoredProject) => {
-    setGeneratedCode(project.files);
-    setCurrentProjectId(project.id);
-    setCurrentProjectName(project.name);
+    // Save current project state before switching
+    if (currentProjectId && currentProjectId !== project.id) {
+      StorageService.updateProject(currentProjectId, {
+        files: generatedCode || {},
+        chatHistory: messages,
+        settings: settings
+      });
+      console.log(`Saved state for project ${currentProjectId} before switching`);
+    }
     
-    // Restore chat history if available
-    if (project.chatHistory && project.chatHistory.length > 0) {
-      setMessages(project.chatHistory);
+    // Load complete project data with isolated storage
+    const fullProject = StorageService.getProject(project.id);
+    if (!fullProject) {
+      console.error(`Failed to load project ${project.id}`);
+      return;
+    }
+    
+    // Load project files
+    setGeneratedCode(fullProject.files);
+    setCurrentProjectId(fullProject.id);
+    setCurrentProjectName(fullProject.name);
+    
+    // Restore chat history
+    if (fullProject.chatHistory && fullProject.chatHistory.length > 0) {
+      setMessages(fullProject.chatHistory);
+      console.log(`Restored ${fullProject.chatHistory.length} messages for project ${fullProject.id}`);
     } else {
       // Add a message to chat indicating project loaded
       const loadMessage: Message = {
         id: Date.now().toString(),
         role: Role.MODEL,
-        content: `📂 **Project Loaded:** ${project.name}\n\n${project.description}\n\n${Object.keys(project.files).length} files loaded. You can now preview and edit the project!`,
+        content: `📂 **Project Loaded:** ${fullProject.name}\n\n${fullProject.description}\n\n${Object.keys(fullProject.files).length} files loaded. You can now preview and edit the project!`,
         timestamp: Date.now()
       };
       setMessages([loadMessage]);
     }
+    
+    // Restore project-specific settings if available
+    if (fullProject.settings) {
+      setSettings(fullProject.settings);
+      console.log(`Restored project-specific settings for ${fullProject.id}`);
+    }
+    
+    console.log(`Project ${fullProject.id} loaded with isolated data from: ${(import.meta as any).env?.VITE_DATA_DIR || './vibecode-projects'}/${fullProject.id}/`);
   };
 
   // Handle project load from manager (backwards compatibility)
@@ -114,12 +145,14 @@ function App() {
   // Handle new project
   const handleNewProject = () => {
     if (generatedCode && messages.length > 0) {
-      // Save current project before starting new one
+      // Save current project with all data before starting new one
       if (currentProjectId) {
         StorageService.updateProject(currentProjectId, {
           files: generatedCode,
-          chatHistory: messages
+          chatHistory: messages,
+          settings: settings
         });
+        console.log(`Saved project ${currentProjectId} before creating new project`);
       }
     }
     
@@ -157,34 +190,32 @@ function App() {
     
     const autoSaveInterval = setInterval(() => {
       if (currentProjectId) {
-        // Update existing project (no new snapshots)
+        // Update existing project with all isolated data
         StorageService.updateProject(currentProjectId, {
           files: generatedCode,
-          chatHistory: messages
+          chatHistory: messages,
+          settings: settings  // Save project-specific settings
         });
-        console.log(`Project ${currentProjectId} updated (auto-save)`);
+        console.log(`Project ${currentProjectId} updated (auto-save) in isolated storage`);
       } else {
-        // First save: Create new project with unique ID
+        // First save: Create new project with unique ID and isolated storage
         const projectName = currentProjectName || `Project ${new Date().toLocaleDateString()}`;
         const projectId = StorageService.saveProject({
           name: projectName,
           description: 'Auto-saved project',
           files: generatedCode,
           chatHistory: messages,
+          settings: settings,
           tags: ['auto-save']
         });
         setCurrentProjectId(projectId);
         setCurrentProjectName(projectName);
-        console.log(`New project created with ID: ${projectId}`);
+        console.log(`New project created with isolated storage: ${projectId}`);
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(autoSaveInterval);
-  }, [generatedCode, messages, currentProjectId, currentProjectName]);
-  
-  // Settings State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
+  }, [generatedCode, messages, currentProjectId, currentProjectName, settings]);
   
   // Ref to track if the current request should be stopped
   const stopRef = useRef(false);
