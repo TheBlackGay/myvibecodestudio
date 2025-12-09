@@ -8,13 +8,17 @@ interface ProjectsManagerProps {
   onClose: () => void;
   onLoadProject: (project: StoredProject) => void;
   currentFiles?: GeneratedCode | null;
+  currentProjectId?: string | null;
+  currentProjectName?: string;
 }
 
 const ProjectsManager: React.FC<ProjectsManagerProps> = ({ 
   isOpen, 
   onClose, 
   onLoadProject,
-  currentFiles 
+  currentFiles,
+  currentProjectId,
+  currentProjectName
 }) => {
   const [projects, setProjects] = useState<StoredProject[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,6 +27,18 @@ const ProjectsManager: React.FC<ProjectsManagerProps> = ({
   const [projectDescription, setProjectDescription] = useState('');
   const [projectTags, setProjectTags] = useState('');
   const [storageStats, setStorageStats] = useState<any>(null);
+
+  // Pre-fill form with current project data when opening
+  useEffect(() => {
+    if (isOpen && showSaveDialog && currentProjectId && currentProjectName) {
+      const project = StorageService.getProject(currentProjectId);
+      if (project) {
+        setProjectName(project.name);
+        setProjectDescription(project.description);
+        setProjectTags(project.tags?.join(', ') || '');
+      }
+    }
+  }, [isOpen, showSaveDialog, currentProjectId, currentProjectName]);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,12 +72,25 @@ const ProjectsManager: React.FC<ProjectsManagerProps> = ({
 
     const tags = projectTags.split(',').map(t => t.trim()).filter(Boolean);
     
-    StorageService.saveProject({
-      name: projectName,
-      description: projectDescription,
-      files: currentFiles,
-      tags
-    });
+    if (currentProjectId) {
+      // Update existing project (no new snapshot)
+      StorageService.updateProject(currentProjectId, {
+        name: projectName,
+        description: projectDescription,
+        files: currentFiles,
+        tags
+      });
+      console.log(`Project ${currentProjectId} updated`);
+    } else {
+      // Create new project with unique ID
+      const projectId = StorageService.saveProject({
+        name: projectName,
+        description: projectDescription,
+        files: currentFiles,
+        tags
+      });
+      console.log(`New project created with ID: ${projectId}`);
+    }
 
     setShowSaveDialog(false);
     setProjectName('');

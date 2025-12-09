@@ -1,12 +1,13 @@
 // Project storage service for persistent file management
 
-import { GeneratedCode } from '../types';
+import { GeneratedCode, Message } from '../types';
 
 export interface StoredProject {
   id: string;
   name: string;
   description: string;
   files: GeneratedCode;
+  chatHistory?: Message[];  // Store chat conversation
   createdAt: number;
   updatedAt: number;
   tags?: string[];
@@ -64,6 +65,7 @@ export class StorageService {
         name: project.name,
         description: project.description,
         files: project.files,
+        chatHistory: project.chatHistory,
         createdAt: existingProject?.createdAt || now,
         updatedAt: now,
         tags: project.tags
@@ -97,14 +99,37 @@ export class StorageService {
   }
 
   // Auto-save current project
-  static autoSave(name: string, files: GeneratedCode): string {
+  static autoSave(name: string, files: GeneratedCode, chatHistory?: Message[]): string {
     const autoSaveName = name || `Untitled Project ${new Date().toLocaleDateString()}`;
     return this.saveProject({
       name: autoSaveName,
       description: 'Auto-saved project',
       files,
+      chatHistory,
       tags: ['auto-save']
     });
+  }
+  
+  // Update project (for incremental saves)
+  static updateProject(id: string, updates: Partial<Omit<StoredProject, 'id' | 'createdAt'>>): boolean {
+    try {
+      const existing = this.getProject(id);
+      if (!existing) return false;
+      
+      const updated: StoredProject = {
+        ...existing,
+        ...updates,
+        id,
+        createdAt: existing.createdAt,
+        updatedAt: Date.now()
+      };
+      
+      localStorage.setItem(STORAGE_KEY_PREFIX + id, JSON.stringify(updated));
+      return true;
+    } catch (error) {
+      console.error('Error updating project:', error);
+      return false;
+    }
   }
 
   // Export project as JSON file
