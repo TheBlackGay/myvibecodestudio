@@ -8,6 +8,7 @@ import TemplateSelector from './components/TemplateSelector';
 import AgentProgressPanel from './components/AgentProgressPanel';
 import ProjectsManager from './components/ProjectsManager';
 import ProjectsSidebar from './components/ProjectsSidebar';
+import GenerationProgress from './components/GenerationProgress';
 import { sendMessage } from './services/ai';
 import { extractCodeBlock } from './utils/codeParser';
 import { Message, Role, GeneratedCode, AISettings } from './types';
@@ -38,6 +39,12 @@ function App() {
   const [agentProgress, setAgentProgress] = useState(0);
   const [agentPhase, setAgentPhase] = useState('');
   const [isAgentActive, setIsAgentActive] = useState(false);
+  
+  // Generation progress state
+  const [generationStage, setGenerationStage] = useState<'thinking' | 'generating' | 'parsing' | 'complete'>('thinking');
+  const [tokensGenerated, setTokensGenerated] = useState(0);
+  const [currentFile, setCurrentFile] = useState<string>('');
+  const [estimatedTime, setEstimatedTime] = useState(30);
   
   // Handle code changes from Monaco Editor
   const handleCodeChange = (filePath: string, content: string) => {
@@ -365,7 +372,11 @@ function App() {
           setMessages(prev => [...prev, errorMessage]);
         }
       } else {
-        // Use single-agent system (original behavior)
+        // Use single-agent system with progress tracking
+        setGenerationStage('thinking');
+        setTokensGenerated(0);
+        setEstimatedTime(30);
+        
         const botMessageId = (Date.now() + 1).toString();
         setMessages((prev) => [
           ...prev,
@@ -374,16 +385,26 @@ function App() {
 
         const stream = await sendMessage(newMessages, settings);
         let fullContent = '';
+        let tokenCount = 0;
+        let hasStartedGenerating = false;
 
         for await (const chunk of stream) {
           // Check if user pressed stop
           if (stopRef.current) {
+            setGenerationStage('complete');
             break;
           }
 
           const text = chunk.text;
           if (text) {
+            if (!hasStartedGenerating) {
+              setGenerationStage('generating');
+              hasStartedGenerating = true;
+            }
+            
             fullContent += text;
+            tokenCount += text.split(/\s+/).length; // Rough token estimate
+            setTokensGenerated(tokenCount);
             
             // Update message in real-time
             setMessages((prev) => 
@@ -395,6 +416,8 @@ function App() {
             // Try to extract code in real-time (even partial) for the preview
             const extracted = extractCodeBlock(fullContent);
             if (extracted) {
+               setGenerationStage('parsing');
+               setCurrentFile(Object.keys(extracted)[0] || '');
                setGeneratedCode(extracted);
                
                // Create new project ID if not exists (first code generation)
@@ -406,6 +429,9 @@ function App() {
             }
           }
         }
+        
+        setGenerationStage('complete');
+        setTimeout(() => setGenerationStage('thinking'), 2000); // Reset after 2s
       }
 
     } catch (error: any) {
@@ -490,6 +516,14 @@ function App() {
         currentPhase={agentPhase}
         overallProgress={agentProgress}
         isActive={isAgentActive}
+      />
+
+      <GenerationProgress
+        isActive={isLoading && !isMultiAgentMode}
+        stage={generationStage}
+        tokensGenerated={tokensGenerated}
+        estimatedTime={estimatedTime}
+        currentFile={currentFile}
       />
     </div>
   );
