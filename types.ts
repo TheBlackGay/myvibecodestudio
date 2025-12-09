@@ -12,10 +12,12 @@ export interface Message {
   isError?: boolean;
 }
 
-export interface GeneratedCode {
+export interface FileData {
   language: string;
-  code: string;
+  content: string;
 }
+
+export type GeneratedCode = Record<string, FileData>;
 
 export type AIProvider = 'gemini' | 'openai';
 

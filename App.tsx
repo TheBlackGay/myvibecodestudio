@@ -22,8 +22,9 @@ function App() {
   // Ref to track if the current request should be stopped
   const stopRef = useRef(false);
 
-  // Load settings from local storage on mount
+  // Load settings and history from local storage on mount
   useEffect(() => {
+    // Load Settings
     const savedSettings = localStorage.getItem('vibe_ai_settings');
     if (savedSettings) {
       try {
@@ -32,7 +33,25 @@ function App() {
         console.error("Failed to parse settings", e);
       }
     }
+
+    // Load History
+    const savedMessages = localStorage.getItem('vibe_messages');
+    const savedCode = localStorage.getItem('vibe_code');
+    if (savedMessages) {
+        try { setMessages(JSON.parse(savedMessages)); } catch (e) { console.error(e); }
+    }
+    if (savedCode) {
+        try { setGeneratedCode(JSON.parse(savedCode)); } catch (e) { console.error(e); }
+    }
   }, []);
+
+  // Persist messages and code whenever they change
+  useEffect(() => {
+    localStorage.setItem('vibe_messages', JSON.stringify(messages));
+    if (generatedCode) {
+        localStorage.setItem('vibe_code', JSON.stringify(generatedCode));
+    }
+  }, [messages, generatedCode]);
 
   const handleSettingsSave = (newSettings: AISettings) => {
     setSettings(newSettings);
@@ -49,6 +68,9 @@ function App() {
     setGeneratedCode(null);
     setInput('');
     stopRef.current = false;
+    // Clear persistence
+    localStorage.removeItem('vibe_messages');
+    localStorage.removeItem('vibe_code');
   };
 
   const handleStop = () => {
