@@ -15,6 +15,22 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<GeneratedCode | null>(null);
   
+  // Handle code changes from Monaco Editor
+  const handleCodeChange = (filePath: string, content: string) => {
+    if (!generatedCode) return;
+    
+    setGeneratedCode(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        [filePath]: {
+          ...prev[filePath],
+          content
+        }
+      };
+    });
+  };
+  
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
@@ -181,7 +197,7 @@ function App() {
           onStop={handleStop}
           isLoading={isLoading}
         />
-        <PreviewPanel code={generatedCode} />
+        <PreviewPanel code={generatedCode} onCodeChange={handleCodeChange} />
       </main>
 
       <SettingsModal 

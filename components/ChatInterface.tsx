@@ -21,7 +21,12 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 // --- Code Block Component ---
-const CodeArtifact = ({ code, language }: { code: string; language: string }) => {
+interface CodeArtifactProps {
+  code: string;
+  language: string;
+}
+
+const CodeArtifact: React.FC<CodeArtifactProps> = ({ code, language }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const lineCount = code.split('\n').length;
 

@@ -19,6 +19,11 @@ export interface FileData {
 
 export type GeneratedCode = Record<string, FileData>;
 
+export interface CodeChangeEvent {
+  filePath: string;
+  content: string;
+}
+
 export type AIProvider = 'gemini' | 'openai';
 
 export interface AISettings {

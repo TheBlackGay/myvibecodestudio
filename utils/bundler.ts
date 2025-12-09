@@ -5,7 +5,9 @@ import { GeneratedCode } from "../types";
  * Combines the virtual file system into a single HTML string 
  * that can be rendered in an iframe.
  */
-export const bundleProject = (files: GeneratedCode): string => {
+export const bundleProject = (files: GeneratedCode | null): string => {
+  if (!files) return '';
+  
   const indexHtml = files['public/index.html']?.content || '';
   const css = files['src/index.css']?.content || '';
   const js = files['src/App.jsx']?.content || '';

@@ -1,15 +1,17 @@
 
-import React, { useState, useEffect } from 'react';
-import { Eye, Code, Smartphone, Monitor, Tablet, RefreshCw, ExternalLink, Sparkles, Download, FileCode, FolderOpen, File, Menu, ChevronRight, ChevronDown } from 'lucide-react';
-import { GeneratedCode } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Eye, Code, Smartphone, Monitor, Tablet, RefreshCw, ExternalLink, Sparkles, Download, FileCode, FolderOpen, File, Menu, ChevronRight, ChevronDown, Save, Edit3 } from 'lucide-react';
+import { GeneratedCode, FileData } from '../types';
 import { bundleProject } from '../utils/bundler';
 import JSZip from 'jszip';
+import Editor from '@monaco-editor/react';
 
 interface PreviewPanelProps {
   code: GeneratedCode | null;
+  onCodeChange: (filePath: string, content: string) => void;
 }
 
-const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
+const PreviewPanel: React.FC<PreviewPanelProps> = ({ code, onCodeChange }) => {
   const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
   const [key, setKey] = useState(0); // Used to force iframe refresh
   const [viewport, setViewport] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
@@ -18,6 +20,12 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
   // File Explorer State
   const [selectedFile, setSelectedFile] = useState<string>('public/index.html');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['public', 'src']));
+  
+  // Editor State
+  const [isEditorReady, setIsEditorReady] = useState(false);
+  const editorRef = useRef<any>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [editingContent, setEditingContent] = useState<string>('');
 
   useEffect(() => {
     if (code) {
@@ -33,6 +41,69 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
       }
     }
   }, [code]);
+
+  // Update editing content when selected file changes
+  useEffect(() => {
+    if (code && selectedFile && code[selectedFile]) {
+      setEditingContent(code[selectedFile].content);
+      setHasUnsavedChanges(false);
+    }
+  }, [selectedFile, code]);
+
+  const handleEditorMount = (editor: any, monaco: any) => {
+    editorRef.current = editor;
+    setIsEditorReady(true);
+    
+    // Configure Monaco theme
+    monaco.editor.defineTheme('vibe-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '6A9955' },
+        { token: 'keyword', foreground: 'C586C0' },
+        { token: 'string', foreground: 'CE9178' },
+        { token: 'number', foreground: 'B5CEA8' },
+        { token: 'type', foreground: '4EC9B0' },
+        { token: 'class', foreground: '4EC9B0' },
+        { token: 'function', foreground: 'DCDCAA' },
+      ],
+      colors: {
+        'editor.background': '#1e1e1e',
+        'editor.foreground': '#d4d4d4',
+        'editor.lineHighlightBackground': '#2a2d2e',
+        'editorLineNumber.foreground': '#858585',
+        'editor.selectionBackground': '#264f78',
+        'editor.inactiveSelectionBackground': '#3a3d41',
+      },
+    });
+    monaco.editor.setTheme('vibe-dark');
+    
+    // Add keyboard shortcut for saving (Cmd/Ctrl + S)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      handleSaveChanges();
+    });
+  };
+
+  const handleEditorChange = (value: string | undefined) => {
+    if (value !== undefined) {
+      setEditingContent(value);
+      setHasUnsavedChanges(value !== code?.[selectedFile]?.content);
+    }
+  };
+
+  const handleSaveChanges = () => {
+    if (selectedFile && editingContent !== undefined) {
+      onCodeChange(selectedFile, editingContent);
+      setHasUnsavedChanges(false);
+    }
+  };
+
+  const handleDiscardChanges = () => {
+    if (code && selectedFile && code[selectedFile]) {
+      setEditingContent(code[selectedFile].content);
+      setHasUnsavedChanges(false);
+    }
+  };
 
   const handleRefresh = () => {
     setKey((prev) => prev + 1);
@@ -50,8 +121,8 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
     const zip = new JSZip();
     
     // Add files to zip
-    Object.entries(code).forEach(([path, file]) => {
-        zip.file(path, file.content);
+    Object.entries(code).forEach(([path, fileData]: [string, FileData]) => {
+        zip.file(path, fileData.content);
     });
 
     // Generate zip
@@ -153,8 +224,9 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
                 ? 'bg-zinc-700 text-white shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
             }`}
+            title="Edit code with Monaco Editor"
           >
-            <Code className="w-3.5 h-3.5" />
+            <Edit3 className="w-3.5 h-3.5" />
             Code
           </button>
         </div>
@@ -169,6 +241,12 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
           )}
           <div className="h-4 w-px bg-zinc-800"></div>
           <div className="flex items-center gap-2">
+            {hasUnsavedChanges && (
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                <span className="text-[10px] text-orange-400 font-medium">Unsaved Changes</span>
+              </div>
+            )}
             <button onClick={handleRefresh} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition" title="Reload Preview">
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -259,32 +337,65 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
              <div className="flex-1 flex flex-col min-w-0">
                 {/* Tabs */}
                 {selectedFile && (
-                   <div className="h-9 bg-[#1e1e1e] flex items-center border-b border-[#27272a] overflow-x-auto scrollbar-hide">
+                   <div className="h-9 bg-[#1e1e1e] flex items-center justify-between border-b border-[#27272a] overflow-x-auto scrollbar-hide">
                       <div className="flex items-center gap-2 px-3 py-2 bg-[#1e1e1e] text-zinc-100 text-xs border-t-2 border-indigo-500 h-full min-w-fit">
                           <FileCode className={`w-3.5 h-3.5 ${selectedFile.endsWith('css') ? 'text-blue-400' : selectedFile.endsWith('jsx') ? 'text-yellow-400' : 'text-orange-400'}`} />
                           {selectedFile}
+                          {hasUnsavedChanges && (
+                            <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse ml-1" title="Unsaved changes" />
+                          )}
                       </div>
+                      
+                      {/* Save/Discard buttons */}
+                      {hasUnsavedChanges && (
+                        <div className="flex items-center gap-2 px-3">
+                          <button
+                            onClick={handleDiscardChanges}
+                            className="px-2 py-1 text-[10px] rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all border border-zinc-700"
+                          >
+                            Discard
+                          </button>
+                          <button
+                            onClick={handleSaveChanges}
+                            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-all"
+                          >
+                            <Save className="w-3 h-3" />
+                            Save
+                          </button>
+                        </div>
+                      )}
                    </div>
                 )}
                 
-                {/* Code Content */}
-                <div className="flex-1 overflow-auto custom-scrollbar bg-[#1e1e1e]">
-                    <div className="flex min-h-full">
-                        {/* Line Numbers */}
-                        <div className="w-12 bg-[#1e1e1e] text-zinc-600 text-right pr-3 pt-4 text-xs font-mono select-none">
-                            {code[selectedFile]?.content.split('\n').map((_, i) => (
-                                <div key={i} className="leading-6">{i + 1}</div>
-                            ))}
-                        </div>
-                        {/* Content */}
-                        <pre className="flex-1 p-4 pt-4 text-sm font-mono leading-6 text-[#d4d4d4] outline-none">
-                            <code 
-                                dangerouslySetInnerHTML={{
-                                    __html: highlightSyntax(code[selectedFile]?.content || '', code[selectedFile]?.language || 'text')
-                                }}
-                            />
-                        </pre>
-                    </div>
+                {/* Monaco Editor */}
+                <div className="flex-1 overflow-hidden bg-[#1e1e1e]">
+                    <Editor
+                      height="100%"
+                      language={code?.[selectedFile]?.language || 'plaintext'}
+                      value={editingContent}
+                      onChange={handleEditorChange}
+                      onMount={handleEditorMount}
+                      theme="vibe-dark"
+                      options={{
+                        minimap: { enabled: false },
+                        fontSize: 13,
+                        lineNumbers: 'on',
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        tabSize: 2,
+                        wordWrap: 'on',
+                        fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace",
+                        fontLigatures: true,
+                        formatOnPaste: true,
+                        formatOnType: true,
+                        padding: { top: 16, bottom: 16 },
+                        smoothScrolling: true,
+                        cursorBlinking: 'smooth',
+                        cursorSmoothCaretAnimation: 'on',
+                        renderLineHighlight: 'all',
+                        bracketPairColorization: { enabled: true },
+                      }}
+                    />
                 </div>
              </div>
           </div>
@@ -292,38 +403,6 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ code }) => {
       </div>
     </div>
   );
-};
-
-// Simple syntax highlighter for the vibe
-const highlightSyntax = (code: string, lang: string) => {
-    // Basic escaping
-    let html = code
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-
-    if (lang === 'javascript' || lang === 'jsx') {
-        html = html
-            .replace(/\b(import|export|from|const|let|var|function|return|if|else|switch|case|default|while|for|break|continue|try|catch|throw|async|await)\b/g, '<span class="text-purple-400">$1</span>')
-            .replace(/\b(true|false|null|undefined)\b/g, '<span class="text-blue-400">$1</span>')
-            .replace(/\b(this|super)\b/g, '<span class="text-red-400">$1</span>')
-            .replace(/(['"`])(.*?)\1/g, '<span class="text-green-400">$&</span>') // Strings
-            .replace(/\/\/.*/g, '<span class="text-zinc-500">$0</span>') // Comments
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span class="text-yellow-300">$1</span>') // Components/Types
-            .replace(/(\w+)\(/g, '<span class="text-blue-300">$1</span>('); // Functions
-    } else if (lang === 'html') {
-         html = html
-            .replace(/(&lt;\/?)(\w+)/g, '$1<span class="text-blue-400">$2</span>') // Tags
-            .replace(/(\s)(\w+)=/g, '$1<span class="text-purple-300">$2</span>=') // Attributes
-            .replace(/(['"`])(.*?)\1/g, '<span class="text-green-400">$&</span>'); // Strings
-    } else if (lang === 'css') {
-         html = html
-            .replace(/([\.#][\w-]+)/g, '<span class="text-yellow-400">$1</span>') // Selectors
-            .replace(/([\w-]+):/g, '<span class="text-blue-300">$1</span>:') // Properties
-            .replace(/:(.*?);/g, ':<span class="text-green-400">$1</span>;'); // Values
-    }
-
-    return html;
 };
 
 export default PreviewPanel;
