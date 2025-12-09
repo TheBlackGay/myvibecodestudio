@@ -1,14 +1,17 @@
 
 import React from 'react';
-import { Sparkles, Terminal, Code2, Zap, Settings, Layers } from 'lucide-react';
+import { Sparkles, Terminal, Code2, Zap, Settings, Layers, Brain, FolderOpen } from 'lucide-react';
 
 interface HeaderProps {
   onReset: () => void;
   onOpenSettings: () => void;
   onOpenTemplates: () => void;
+  onOpenProjects: () => void;
+  isMultiAgentMode?: boolean;
+  onToggleMultiAgent?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings, onOpenTemplates }) => {
+const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings, onOpenTemplates, onOpenProjects, isMultiAgentMode, onToggleMultiAgent }) => {
   return (
     <header className="h-16 border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
       <div className="flex items-center gap-2">
@@ -43,6 +46,28 @@ const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings, onOpenTemplate
         >
           <Layers className="w-5 h-5" />
         </button>
+
+        <button
+          onClick={onOpenProjects}
+          className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"
+          title="Projects"
+        >
+          <FolderOpen className="w-5 h-5" />
+        </button>
+
+        {onToggleMultiAgent && (
+          <button
+            onClick={onToggleMultiAgent}
+            className={`p-2 rounded-md transition-all ${
+              isMultiAgentMode 
+                ? 'text-purple-400 bg-purple-500/20 hover:bg-purple-500/30' 
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
+            title={isMultiAgentMode ? "Multi-Agent Mode (Active)" : "Multi-Agent Mode (Inactive)"}
+          >
+            <Brain className="w-5 h-5" />
+          </button>
+        )}
 
         <button
           onClick={onOpenSettings}

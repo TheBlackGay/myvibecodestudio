@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Environment variables
+.env.local
+.env.*.local
+
+# Project data directory
+vibecode-projects/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

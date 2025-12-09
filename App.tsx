@@ -5,11 +5,15 @@ import ChatInterface from './components/ChatInterface';
 import PreviewPanel from './components/PreviewPanel';
 import SettingsModal from './components/SettingsModal';
 import TemplateSelector from './components/TemplateSelector';
+import AgentProgressPanel from './components/AgentProgressPanel';
+import ProjectsManager from './components/ProjectsManager';
 import { sendMessage } from './services/ai';
 import { extractCodeBlock } from './utils/codeParser';
 import { Message, Role, GeneratedCode, AISettings } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { ProjectTemplate } from './templates';
+import { multiAgentService, AgentState } from './services/agents';
+import { StoredProject, StorageService } from './services/storage';
 
 function App() {
   const [input, setInput] = useState('');
@@ -17,6 +21,15 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [generatedCode, setGeneratedCode] = useState<GeneratedCode | null>(null);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  
+  // Multi-agent state
+  const [isMultiAgentMode, setIsMultiAgentMode] = useState(false);
+  const [agentStates, setAgentStates] = useState<AgentState[]>([]);
+  const [agentProgress, setAgentProgress] = useState(0);
+  const [agentPhase, setAgentPhase] = useState('');
+  const [isAgentActive, setIsAgentActive] = useState(false);
   
   // Handle code changes from Monaco Editor
   const handleCodeChange = (filePath: string, content: string) => {
@@ -62,6 +75,37 @@ function App() {
   const handleTemplateSelect = (template: ProjectTemplate) => {
     setGeneratedCode(template.files);
   };
+
+  // Handle project load
+  const handleLoadProject = (project: StoredProject) => {
+    setGeneratedCode(project.files);
+    setCurrentProjectId(project.id);
+    
+    // Add a message to chat indicating project loaded
+    const loadMessage: Message = {
+      id: Date.now().toString(),
+      role: Role.MODEL,
+      content: `📂 **Project Loaded:** ${project.name}\n\n${project.description}\n\n${Object.keys(project.files).length} files loaded. You can now preview and edit the project!`,
+      timestamp: Date.now()
+    };
+    setMessages(prev => [...prev, loadMessage]);
+  };
+
+  // Auto-save current project (every 30 seconds if there's code)
+  useEffect(() => {
+    if (!generatedCode) return;
+    
+    const autoSaveInterval = setInterval(() => {
+      const projectName = currentProjectId 
+        ? StorageService.getProject(currentProjectId)?.name 
+        : undefined;
+      
+      StorageService.autoSave(projectName || 'Untitled Project', generatedCode);
+      console.log('Project auto-saved');
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [generatedCode, currentProjectId]);
   
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -160,37 +204,79 @@ function App() {
     setIsLoading(true);
 
     try {
-      // Create a placeholder message for streaming
-      const botMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => [
-        ...prev,
-        { id: botMessageId, role: Role.MODEL, content: '', timestamp: Date.now() },
-      ]);
+      // Check if multi-agent mode is enabled
+      if (isMultiAgentMode) {
+        // Use multi-agent system
+        setIsAgentActive(true);
+        setAgentProgress(0);
+        setAgentPhase('Initializing multi-agent system...');
 
-      const stream = await sendMessage(newMessages, settings);
-      let fullContent = '';
+        const result = await multiAgentService.executeRequest(
+          { userPrompt: messageText },
+          settings,
+          (status, progress, agents) => {
+            setAgentPhase(status);
+            setAgentProgress(progress);
+            setAgentStates(agents);
+          }
+        );
 
-      for await (const chunk of stream) {
-        // Check if user pressed stop
-        if (stopRef.current) {
-          break;
-        }
+        setIsAgentActive(false);
 
-        const text = chunk.text;
-        if (text) {
-          fullContent += text;
+        if (result.success) {
+          // Add agent summary message
+          const summaryMessage: Message = {
+            id: Date.now().toString(),
+            role: Role.MODEL,
+            content: `✨ **Multi-Agent System Complete**\n\n${result.summary}\n\n**Agents Involved:**\n- 🧠 Coordinator: Orchestrated the workflow\n- 🏗️ Architect: Designed the structure\n- 🎨 Frontend: Built the UI components\n- ⚙️ Backend: Implemented logic\n- 🔍 Reviewer: Ensured code quality\n\nYou can now preview and edit the generated code!`,
+            timestamp: Date.now()
+          };
           
-          // Update message in real-time
-          setMessages((prev) => 
-            prev.map(msg => 
-              msg.id === botMessageId ? { ...msg, content: fullContent } : msg
-            )
-          );
+          setMessages(prev => [...prev, summaryMessage]);
+          setGeneratedCode(result.files);
+        } else {
+          const errorMessage: Message = {
+            id: Date.now().toString(),
+            role: Role.MODEL,
+            content: `❌ Multi-agent system encountered an error: ${result.summary}`,
+            timestamp: Date.now(),
+            isError: true
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        }
+      } else {
+        // Use single-agent system (original behavior)
+        const botMessageId = (Date.now() + 1).toString();
+        setMessages((prev) => [
+          ...prev,
+          { id: botMessageId, role: Role.MODEL, content: '', timestamp: Date.now() },
+        ]);
 
-          // Try to extract code in real-time (even partial) for the preview
-          const extracted = extractCodeBlock(fullContent);
-          if (extracted) {
-             setGeneratedCode(extracted);
+        const stream = await sendMessage(newMessages, settings);
+        let fullContent = '';
+
+        for await (const chunk of stream) {
+          // Check if user pressed stop
+          if (stopRef.current) {
+            break;
+          }
+
+          const text = chunk.text;
+          if (text) {
+            fullContent += text;
+            
+            // Update message in real-time
+            setMessages((prev) => 
+              prev.map(msg => 
+                msg.id === botMessageId ? { ...msg, content: fullContent } : msg
+              )
+            );
+
+            // Try to extract code in real-time (even partial) for the preview
+            const extracted = extractCodeBlock(fullContent);
+            if (extracted) {
+               setGeneratedCode(extracted);
+            }
           }
         }
       }
@@ -219,6 +305,9 @@ function App() {
         onReset={handleReset} 
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
+        onOpenProjects={() => setIsProjectsOpen(true)}
+        isMultiAgentMode={isMultiAgentMode}
+        onToggleMultiAgent={() => setIsMultiAgentMode(!isMultiAgentMode)}
       />
       
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
@@ -249,6 +338,20 @@ function App() {
         isOpen={isTemplatesOpen}
         onClose={() => setIsTemplatesOpen(false)}
         onSelect={handleTemplateSelect}
+      />
+
+      <ProjectsManager
+        isOpen={isProjectsOpen}
+        onClose={() => setIsProjectsOpen(false)}
+        onLoadProject={handleLoadProject}
+        currentFiles={generatedCode}
+      />
+
+      <AgentProgressPanel
+        agents={agentStates}
+        currentPhase={agentPhase}
+        overallProgress={agentProgress}
+        isActive={isAgentActive}
       />
     </div>
   );
