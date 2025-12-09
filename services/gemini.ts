@@ -1,53 +1,48 @@
-import { GoogleGenAI, Chat, GenerativeModel } from "@google/genai";
-import { INITIAL_SYSTEM_INSTRUCTION, GEMINI_MODEL } from "../constants";
 
-let chatSession: Chat | null = null;
-let genAI: GoogleGenAI | null = null;
+import { GoogleGenAI } from "@google/genai";
+import { INITIAL_SYSTEM_INSTRUCTION } from "../constants";
+import { AISettings, Message, Role } from "../types";
 
-export const initializeGemini = () => {
-  if (!process.env.API_KEY) {
-    console.error("API_KEY is missing from environment variables.");
-    return;
+export const streamGemini = async function* (
+  messages: Message[],
+  settings: AISettings
+) {
+  if (!settings.apiKey) {
+    throw new Error("Missing API Key for Gemini.");
   }
-  try {
-    genAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  } catch (error) {
-    console.error("Failed to initialize GoogleGenAI", error);
-  }
-};
 
-export const getChatSession = (): Chat => {
-  if (!genAI) {
-    initializeGemini();
-    if (!genAI) {
-       throw new Error("Gemini AI not initialized. Missing API Key?");
+  const ai = new GoogleGenAI({ apiKey: settings.apiKey });
+  
+  // Transform app messages to Gemini history format
+  // We exclude the very last message because sendMessageStream takes the new message
+  const historyMessages = messages.slice(0, -1);
+  const lastMessage = messages[messages.length - 1];
+
+  if (!lastMessage || lastMessage.role !== Role.USER) {
+      // Should not happen if called correctly
+      throw new Error("Invalid message history structure.");
+  }
+
+  const chat = ai.chats.create({
+    model: settings.model,
+    config: {
+      systemInstruction: INITIAL_SYSTEM_INSTRUCTION,
+      temperature: 0.7,
+    },
+    history: historyMessages.map(msg => ({
+      role: msg.role === Role.USER ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    }))
+  });
+
+  const result = await chat.sendMessageStream({ 
+    message: lastMessage.content 
+  });
+
+  for await (const chunk of result) {
+    const text = chunk.text;
+    if (text) {
+      yield { text };
     }
   }
-
-  if (!chatSession) {
-    chatSession = genAI.chats.create({
-      model: GEMINI_MODEL,
-      config: {
-        systemInstruction: INITIAL_SYSTEM_INSTRUCTION,
-        temperature: 0.7, // Balance creativity and correctness
-      },
-    });
-  }
-  return chatSession;
-};
-
-export const sendMessageStream = async (message: string) => {
-  const chat = getChatSession();
-  
-  try {
-    const result = await chat.sendMessageStream({ message });
-    return result;
-  } catch (error) {
-    console.error("Error sending message to Gemini:", error);
-    throw error;
-  }
-};
-
-export const resetChat = () => {
-  chatSession = null;
 };

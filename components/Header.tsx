@@ -1,11 +1,13 @@
+
 import React from 'react';
-import { Sparkles, Terminal, Code2, Zap } from 'lucide-react';
+import { Sparkles, Terminal, Code2, Zap, Settings } from 'lucide-react';
 
 interface HeaderProps {
   onReset: () => void;
+  onOpenSettings: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onReset }) => {
+const Header: React.FC<HeaderProps> = ({ onReset, onOpenSettings }) => {
   return (
     <header className="h-16 border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-50">
       <div className="flex items-center gap-2">
@@ -16,7 +18,7 @@ const Header: React.FC<HeaderProps> = ({ onReset }) => {
           <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
             VibeCode Studio
           </h1>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Gemini 2.5 Powered</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">AI Powered</p>
         </div>
       </div>
 
@@ -31,6 +33,16 @@ const Header: React.FC<HeaderProps> = ({ onReset }) => {
               <span>Full Stack</span>
            </div>
         </div>
+        <div className="h-4 w-px bg-zinc-800 mx-2"></div>
+        
+        <button
+          onClick={onOpenSettings}
+          className="p-2 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all"
+          title="Model Settings"
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+
         <button 
           onClick={onReset}
           className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all border border-zinc-700"

@@ -1,4 +1,6 @@
 
+import { AISettings } from './types';
+
 export const INITIAL_SYSTEM_INSTRUCTION = `
 You are VibeCode, an enthusiastic and expert AI "Vibe Coder". Your goal is to turn emotions, moods, and vague ideas into beautiful, production-ready React applications instantly.
 
@@ -63,18 +65,18 @@ You are VibeCode, an enthusiastic and expert AI "Vibe Coder". Your goal is to tu
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
-    
-    // Initialize icons if needed (though React renders svgs usually, lucide global helps if using <i data-lucide> but here we use React components if available or just raw SVGs if preferred. 
-    // BETTER STRATEGY FOR ICONS:
-    // If you can't easily use lucide-react via UMD, just use pure SVG elements in your JSX for maximum reliability.
-    // OR create a helper component Icon that renders the SVG.
   </script>
 </body>
 </html>
 \`\`\`
 `;
 
-export const GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_SETTINGS: AISettings = {
+  provider: 'gemini',
+  apiKey: process.env.API_KEY || '',
+  model: 'gemini-2.5-flash',
+  baseUrl: ''
+};
 
 export const SUGGESTED_PROMPTS = [
   {

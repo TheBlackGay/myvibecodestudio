@@ -1,3 +1,4 @@
+
 export enum Role {
   USER = 'user',
   MODEL = 'model'
@@ -16,8 +17,11 @@ export interface GeneratedCode {
   code: string;
 }
 
-export interface VibeSettings {
+export type AIProvider = 'gemini' | 'openai';
+
+export interface AISettings {
+  provider: AIProvider;
+  apiKey: string;
+  baseUrl?: string;
   model: string;
-  creativity: number; // Temperature
-  mode: 'architect' | 'designer' | 'developer';
 }

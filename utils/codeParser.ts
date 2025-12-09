@@ -1,8 +1,7 @@
 import { GeneratedCode } from "../types";
 
 export const extractCodeBlock = (markdown: string): GeneratedCode | null => {
-  // Regex to match markdown code blocks: ```language code ```
-  // We prioritize HTML blocks as per our system instruction
+  // 1. Try to find a complete HTML block first
   const htmlRegex = /```html\s*([\s\S]*?)\s*```/;
   const htmlMatch = markdown.match(htmlRegex);
 
@@ -13,12 +12,23 @@ export const extractCodeBlock = (markdown: string): GeneratedCode | null => {
     };
   }
 
-  // Fallback for generic blocks if strictly needed, but we mostly want HTML
+  // 2. Fallback: Check for an open-ended HTML block (useful for streaming)
+  // We look for ```html followed by anything
+  const openHtmlRegex = /```html\s*([\s\S]*)/;
+  const openMatch = markdown.match(openHtmlRegex);
+
+  if (openMatch && openMatch[1]) {
+     return {
+        language: 'html',
+        code: openMatch[1].trim()
+     };
+  }
+
+  // 3. Generic fallback (optional, but we prioritize HTML for this app)
   const genericRegex = /```(\w+)\s*([\s\S]*?)\s*```/;
   const genericMatch = markdown.match(genericRegex);
 
   if (genericMatch && genericMatch[1] && genericMatch[2]) {
-     // If it's pure JS/TS, we might skip it or handle it, but for now we focus on the full HTML runner
      return {
         language: genericMatch[1],
         code: genericMatch[2].trim()

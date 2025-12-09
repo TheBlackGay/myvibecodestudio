@@ -1,6 +1,6 @@
 
-import React, { useRef, useEffect } from 'react';
-import { Send, Bot, User, Loader2, Sparkles, Gamepad2, Leaf, LayoutDashboard, Zap, ArrowRight } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Send, Bot, User, Loader2, Sparkles, Gamepad2, Leaf, LayoutDashboard, Zap, ArrowRight, Square, ChevronDown, ChevronUp, Code2, Terminal } from 'lucide-react';
 import { Message, Role } from '../types';
 import { SUGGESTED_PROMPTS } from '../constants';
 
@@ -9,6 +9,7 @@ interface ChatInterfaceProps {
   input: string;
   setInput: (value: string) => void;
   onSend: (text?: string) => void;
+  onStop: () => void;
   isLoading: boolean;
 }
 
@@ -19,11 +20,82 @@ const iconMap: Record<string, React.ElementType> = {
   Zap
 };
 
+// --- Code Block Component ---
+const CodeArtifact = ({ code, language }: { code: string; language: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const lineCount = code.split('\n').length;
+
+  return (
+    <div className="my-3 rounded-xl overflow-hidden border border-zinc-700/50 bg-zinc-950 shadow-sm group">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-zinc-900/50 hover:bg-zinc-900 transition-colors cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+            <Terminal className="w-4 h-4" />
+          </div>
+          <div className="text-left">
+            <div className="text-sm font-medium text-zinc-300">Generated Code</div>
+            <div className="text-xs text-zinc-500 flex items-center gap-2">
+              <span className="uppercase">{language}</span>
+              <span className="w-1 h-1 rounded-full bg-zinc-600"></span>
+              <span>{lineCount} lines</span>
+            </div>
+          </div>
+        </div>
+        <div className={`text-zinc-500 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+          <ChevronDown className="w-5 h-5" />
+        </div>
+      </button>
+
+      {isExpanded && (
+        <div className="relative border-t border-zinc-800 bg-[#0d0d0d]">
+          <div className="absolute top-2 right-2 px-2 py-1 rounded bg-zinc-800 text-[10px] text-zinc-400 font-mono uppercase tracking-wider">
+            {language}
+          </div>
+          <pre className="p-4 overflow-x-auto text-xs font-mono leading-relaxed text-zinc-300 scrollbar-hide">
+            <code>{code}</code>
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- Message Parser & Renderer ---
+const MessageContent = ({ content }: { content: string }) => {
+  // Regex to split by code blocks: ```lang ... ```
+  // We capture the language and the code
+  const parts = content.split(/(```[\w-]*\s*[\s\S]*?```)/g);
+
+  return (
+    <div className="whitespace-pre-wrap">
+      {parts.map((part, index) => {
+        // Check if this part is a code block
+        const codeMatch = part.match(/```([\w-]*)\s*([\s\S]*?)```/);
+        
+        if (codeMatch) {
+          const language = codeMatch[1] || 'text';
+          const code = codeMatch[2].trim();
+          return <CodeArtifact key={index} code={code} language={language} />;
+        }
+        
+        // Render regular text (trimmed to avoid extra newlines around code blocks)
+        if (!part.trim()) return null;
+        
+        return <span key={index}>{part}</span>;
+      })}
+    </div>
+  );
+};
+
 const ChatInterface: React.FC<ChatInterfaceProps> = ({
   messages,
   input,
   setInput,
   onSend,
+  onStop,
   isLoading
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -42,10 +114,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const handleSuggestionClick = (prompt: string) => {
     setInput(prompt);
-    // Optional: auto-send
-    // onSend(prompt); 
-    // Better to let them preview/edit in input, or just send immediately.
-    // Let's send immediately for "friendliness" and speed.
     onSend(prompt);
   };
 
@@ -125,7 +193,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     {msg.content}
                  </div>
               ) : (
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                <MessageContent content={msg.content} />
               )}
             </div>
           </div>
@@ -137,7 +205,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
              </div>
              <div className="bg-zinc-950/50 border border-zinc-800 rounded-2xl px-4 py-3 flex items-center gap-3 shadow-sm rounded-bl-none">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
-                <span className="text-xs text-zinc-400 font-medium">Crafting the code...</span>
+                <span className="text-xs text-zinc-400 font-medium">Vibe coding in progress...</span>
              </div>
           </div>
         )}
@@ -152,16 +220,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe your vision (e.g., 'A coffee shop landing page with a warm, cozy vibe')..."
-            className="w-full bg-transparent text-sm text-zinc-200 placeholder-zinc-500 p-4 pr-12 resize-none h-14 max-h-32 focus:outline-none scrollbar-hide"
+            disabled={isLoading}
+            placeholder={isLoading ? "Wait for the vibe to finish..." : "Describe your vision (e.g., 'A coffee shop landing page with a warm, cozy vibe')..."}
+            className="w-full bg-transparent text-sm text-zinc-200 placeholder-zinc-500 p-4 pr-12 resize-none h-14 max-h-32 focus:outline-none scrollbar-hide disabled:opacity-50 disabled:cursor-not-allowed"
           />
-          <button
-            onClick={() => onSend()}
-            disabled={!input.trim() || isLoading}
-            className="absolute right-2 bottom-2 p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-900/20"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          {isLoading ? (
+            <button
+              onClick={onStop}
+              className="absolute right-2 bottom-2 p-2 rounded-lg bg-zinc-800 text-red-400 hover:bg-zinc-700 hover:text-red-300 transition-all border border-zinc-700"
+              title="Stop generating"
+            >
+              <Square className="w-4 h-4 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onSend()}
+              disabled={!input.trim()}
+              className="absolute right-2 bottom-2 p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-900/20"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="mt-2 flex justify-between items-center px-1">
           <span className="text-[10px] text-zinc-600 font-medium">VibeCode AI v2.5</span>
