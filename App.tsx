@@ -17,6 +17,8 @@ import { ProjectTemplate } from './templates';
 import { multiAgentService, AgentState } from './services/agents';
 import { StoredProject, StorageService } from './services/storage';
 import { getDefaultScaffold, getScaffoldDescription, getScaffoldTags } from './templates/scaffold';
+import { analyzeAndRecommendStack, fetchRealScaffold, generateScaffold, ProjectRecommendation } from './services/projectInitializer';
+import { generateThinkingPlan, formatThinkingPlan, createPhaseMessage, formatImplementationSteps } from './services/thinkingMethodology';
 
 function App() {
   const [input, setInput] = useState('');
@@ -45,6 +47,14 @@ function App() {
   const [tokensGenerated, setTokensGenerated] = useState(0);
   const [currentFile, setCurrentFile] = useState<string>('');
   const [estimatedTime, setEstimatedTime] = useState(30);
+  
+  // Smart initialization state
+  const [showStackRecommendation, setShowStackRecommendation] = useState(false);
+  const [stackRecommendation, setStackRecommendation] = useState<ProjectRecommendation | null>(null);
+  
+  // Thinking methodology state
+  const [showThinkingProcess, setShowThinkingProcess] = useState(true); // Enable by default
+  const [currentImplementationStep, setCurrentImplementationStep] = useState(0);
   
   // Handle code changes from Monaco Editor
   const handleCodeChange = (filePath: string, content: string) => {
@@ -324,6 +334,124 @@ function App() {
     setIsLoading(true);
 
     try {
+      // Check if this is a new project request (heuristic: contains "build", "create", "make")
+      const isNewProjectRequest = /\b(build|create|make|develop|generate|design)\b/i.test(messageText) && 
+                                  !generatedCode; // No code yet = new project
+      
+      // PHASE 1: THINKING PROCESS (if enabled)
+      if (showThinkingProcess && isNewProjectRequest) {
+        setGenerationStage('thinking');
+        
+        // Show thinking phase message
+        const thinkingStartMessage: Message = {
+          id: Date.now().toString(),
+          role: Role.MODEL,
+          content: createPhaseMessage({
+            phase: 'understanding',
+            title: 'Understanding Requirements',
+            content: 'Analyzing your request to understand exactly what you need...',
+            status: 'thinking'
+          }),
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, thinkingStartMessage]);
+        
+        // Generate structured thinking plan
+        const thinkingPlan = await generateThinkingPlan(
+          messageText,
+          {
+            hasExistingCode: !!generatedCode,
+            projectType: currentProjectName || 'New project',
+            currentFiles: generatedCode ? Object.keys(generatedCode) : []
+          },
+          settings
+        );
+        
+        // Show the complete thinking plan
+        const planMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: Role.MODEL,
+          content: formatThinkingPlan(thinkingPlan),
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, planMessage]);
+        
+        // Show implementation steps
+        const stepsMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: Role.MODEL,
+          content: formatImplementationSteps(thinkingPlan.steps, 0),
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, stepsMessage]);
+        
+        // Small delay to let user read the plan
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+      
+      // Smart initialization: Analyze and recommend stack first
+      if (isNewProjectRequest) {
+        setGenerationStage('thinking');
+        
+        // AI analyzes and recommends tech stack
+        const recommendation = await analyzeAndRecommendStack(messageText, settings);
+        
+        // Show recommendation to user
+        const recommendationMessage: Message = {
+          id: Date.now().toString(),
+          role: Role.MODEL,
+          content: `🎯 **Project Analysis Complete**\n\n**Recommended Tech Stack:**\n- **Framework:** ${recommendation.framework}\n- **Build Tool:** ${recommendation.tooling}\n- **Project Type:** ${recommendation.projectType}\n\n**Reasoning:** ${recommendation.reasoning}\n\n**Next Steps:**\nI'll initialize your project with industry-standard scaffolding (${recommendation.scaffoldCommand}), then customize it based on your requirements.\n\nInitializing project...`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, recommendationMessage]);
+        
+        // Fetch real scaffold from CDN
+        setGenerationStage('parsing');
+        setCurrentFile('Fetching from CDN...');
+        const scaffold = await fetchRealScaffold(recommendation);
+        
+        // Load scaffold into editor
+        setGeneratedCode(scaffold.files);
+        
+        // Create project ID
+        if (!currentProjectId) {
+          const projectId = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          setCurrentProjectId(projectId);
+          setCurrentProjectName(`${recommendation.projectType} - ${new Date().toLocaleDateString()}`);
+        }
+        
+        // Notify user that scaffold is ready
+        const scaffoldReadyMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: Role.MODEL,
+          content: `✅ **Project Initialized!**\n\n**Scaffold:** ${scaffold.name}\n**Files Created:** ${Object.keys(scaffold.files).length}\n\nYour project is now set up with:\n${Object.keys(scaffold.files).map(f => `- ${f}`).join('\n')}\n\nNow I'll customize it based on your request: "${messageText}"`,
+          timestamp: Date.now()
+        };
+        setMessages(prev => [...prev, scaffoldReadyMessage]);
+        
+        setGenerationStage('complete');
+        
+        // Now continue with AI customization based on the original request
+        // This will build on top of the scaffold
+        const customizationPrompt = `Using the initialized ${scaffold.name} project scaffold, customize it to: ${messageText}. 
+
+The project already has these files:
+${Object.keys(scaffold.files).join(', ')}
+
+Focus on customizing the App component and adding any additional features needed. Keep the existing project structure.`;
+        
+        // Continue with normal AI generation for customization
+        const userMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: Role.USER,
+          content: customizationPrompt,
+          timestamp: Date.now(),
+        };
+        
+        const customizationMessages = [...messages, recommendationMessage, scaffoldReadyMessage, userMessage];
+        setMessages(customizationMessages);
+      }
+      
       // Check if multi-agent mode is enabled
       if (isMultiAgentMode) {
         // Use multi-agent system
